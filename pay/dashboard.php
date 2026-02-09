@@ -860,11 +860,11 @@ body { scrollbar-width:none; }
 .ios-install-banner {
   position: fixed;
   bottom: calc(var(--nav-h) + var(--safe-bottom) + 70px);
-  left: 50%;
-  transform: translateX(-50%);
+  left: 20px;
+  right: 20px;
   z-index: 200;
-  width: calc(100% - 40px);
   max-width: 480px;
+  margin: 0 auto;
   animation: fadeInUp 0.4s ease both;
 }
 
@@ -906,21 +906,18 @@ body { scrollbar-width:none; }
 }
 
 .ios-install-text span {
-  font-size: 12px;
+  font-size: 11px;
   color: rgba(255,255,255,0.55);
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  flex-wrap: wrap;
+  display: inline;
+  line-height: 1.5;
 }
 
 .ios-share-icon {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   color: #3b82f6;
   display: inline-block;
-  vertical-align: middle;
-  flex-shrink: 0;
+  vertical-align: -2px;
 }
 
 .ios-install-close {
