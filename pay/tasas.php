@@ -150,6 +150,38 @@ body { scrollbar-width:none; }
   display: block;
 }
 
+.header-back {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: var(--text);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.header-back-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.2s ease;
+}
+
+.header-back-icon svg {
+  width: 18px;
+  height: 18px;
+  color: var(--text-secondary);
+}
+
+.header-back:hover .header-back-icon {
+  background: var(--glass-hover);
+}
+
 .header-avatar {
   width: 36px;
   height: 36px;
@@ -703,7 +735,12 @@ body { scrollbar-width:none; }
      ============================================ -->
 <header class="app-header">
   <div class="header-inner">
-    <a href="/app/pay/dashboard.php">
+    <a href="/app/pay/dashboard.php" class="header-back">
+      <span class="header-back-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M15 18l-6-6 6-6"/>
+        </svg>
+      </span>
       <svg class="header-logo" viewBox="0 0 292.01 108.35" xmlns="http://www.w3.org/2000/svg">
         <polygon fill="#52ae32" points="42.81 102.09 42.81 77.82 61.22 65.68 42.81 53.55 42.81 29.27 79.63 53.55 79.63 77.82 42.81 102.09"/>
         <polygon fill="#3259fd" points="42.84 5.72 42.84 29.99 24.43 42.13 42.84 54.26 42.84 78.54 6.02 54.26 6.02 29.99 42.84 5.72"/>
@@ -1085,6 +1122,13 @@ body { scrollbar-width:none; }
   updateCalc();
 
 })();
+</script>
+
+<!-- PWA Service Worker -->
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/app/pay/sw.js', { scope: '/app/pay/' });
+}
 </script>
 
 </body>

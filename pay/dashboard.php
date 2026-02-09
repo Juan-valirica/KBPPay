@@ -836,5 +836,143 @@ body { scrollbar-width:none; }
   </div>
 </nav>
 
+<!-- ============================================
+     iOS INSTALL BANNER
+     ============================================ -->
+<div class="ios-install-banner" id="iosBanner" style="display:none;">
+  <div class="ios-install-inner">
+    <div class="ios-install-icon">
+      <svg viewBox="0 0 292.01 108.35" xmlns="http://www.w3.org/2000/svg" width="32" height="32">
+        <polygon fill="#52ae32" points="42.81 102.09 42.81 77.82 61.22 65.68 42.81 53.55 42.81 29.27 79.63 53.55 79.63 77.82 42.81 102.09"/>
+        <polygon fill="#3259fd" points="42.84 5.72 42.84 29.99 24.43 42.13 42.84 54.26 42.84 78.54 6.02 54.26 6.02 29.99 42.84 5.72"/>
+      </svg>
+    </div>
+    <div class="ios-install-text">
+      <strong>Instalar KBPPAY</strong>
+      <span>Toca <svg class="ios-share-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg> y luego <strong>&laquo;Agregar al inicio&raquo;</strong></span>
+    </div>
+    <button class="ios-install-close" id="iosBannerClose" aria-label="Cerrar">&times;</button>
+  </div>
+</div>
+
+<style>
+/* iOS Install Banner */
+.ios-install-banner {
+  position: fixed;
+  bottom: calc(var(--nav-h) + var(--safe-bottom) + 70px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 200;
+  width: calc(100% - 40px);
+  max-width: 480px;
+  animation: fadeInUp 0.4s ease both;
+}
+
+.ios-install-inner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: rgba(25,30,50,0.92);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+
+.ios-install-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.ios-install-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.ios-install-text strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 2px;
+}
+
+.ios-install-text span {
+  font-size: 12px;
+  color: rgba(255,255,255,0.55);
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-wrap: wrap;
+}
+
+.ios-share-icon {
+  width: 16px;
+  height: 16px;
+  color: #3b82f6;
+  display: inline-block;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+.ios-install-close {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.08);
+  border: none;
+  color: rgba(255,255,255,0.5);
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  line-height: 1;
+  padding: 0;
+}
+</style>
+
+<!-- ============================================
+     PWA — Service Worker + Install
+     ============================================ -->
+<script>
+// Register Service Worker
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/app/pay/sw.js', { scope: '/app/pay/' });
+}
+
+// iOS install banner
+(function() {
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  const dismissed = localStorage.getItem('kbp_ios_dismiss');
+
+  if (isIOS && !isStandalone && !dismissed) {
+    document.getElementById('iosBanner').style.display = 'block';
+  }
+
+  document.getElementById('iosBannerClose').addEventListener('click', function() {
+    document.getElementById('iosBanner').style.display = 'none';
+    localStorage.setItem('kbp_ios_dismiss', '1');
+  });
+})();
+
+// Android install prompt
+let deferredPrompt;
+window.addEventListener('beforeinstallprompt', function(e) {
+  e.preventDefault();
+  deferredPrompt = e;
+});
+</script>
+
 </body>
 </html>
