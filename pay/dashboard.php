@@ -646,6 +646,7 @@ body { scrollbar-width:none; }
 <header class="app-header">
   <div class="header-inner">
     <!-- Logo inline SVG (texto en blanco para fondo oscuro) -->
+    <a href="/app/pay/dashboard.php">
     <svg class="header-logo" viewBox="0 0 292.01 108.35" xmlns="http://www.w3.org/2000/svg">
       <polygon fill="#52ae32" points="42.81 102.09 42.81 77.82 61.22 65.68 42.81 53.55 42.81 29.27 79.63 53.55 79.63 77.82 42.81 102.09"/>
       <polygon fill="#3259fd" points="42.84 5.72 42.84 29.99 24.43 42.13 42.84 54.26 42.84 78.54 6.02 54.26 6.02 29.99 42.84 5.72"/>
@@ -659,6 +660,7 @@ body { scrollbar-width:none; }
       </g>
       <rect fill="#FFFFFF" x="251.47" y="63.11" width="7.01" height="7.01"/>
     </svg>
+    </a>
 
     <div class="header-avatar">
       <?= htmlspecialchars($avatarInitials) ?>
@@ -767,7 +769,7 @@ body { scrollbar-width:none; }
   <div class="nav-inner">
 
     <!-- Tasas -->
-    <a class="nav-item" href="#">
+    <a class="nav-item" href="/app/pay/tasas.php">
       <span class="nav-icon">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
           <path d="M8 3L4 7l4 4"/>
