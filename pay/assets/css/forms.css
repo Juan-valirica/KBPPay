@@ -1,0 +1,852 @@
+:root {
+  --green: #52ae32;
+  --blue: #3259fd;
+  --bg: #f6f8fb;
+  --text: #1f2937;
+  --muted: #6b7280;
+  --card: #ffffff;
+  --border: #e5e7eb;
+  --radius: 14px;
+  --shadow: 0 10px 30px rgba(0,0,0,0.08);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont;
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* Layout */
+.auth-wrapper {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 28px;
+}
+
+/* Progress */
+.progress {
+  height: 6px;
+  background: #e5e7eb;
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: 24px;
+}
+
+.progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--green), var(--blue));
+  width: 0%;
+  transition: width .4s ease;
+}
+
+/* Headings */
+.auth-card h2 {
+  margin: 0 0 6px;
+  font-size: 22px;
+}
+
+.auth-card p {
+  margin: 0 0 20px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+/* Inputs */
+.form-group {
+  margin-bottom: 16px;
+}
+
+label {
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 6px;
+  display: block;
+}
+
+input, select {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  font-size: 14px;
+}
+
+input:focus {
+  outline: none;
+  border-color: var(--blue);
+}
+
+/* CTA */
+button {
+  width: 100%;
+  padding: 14px;
+  background: linear-gradient(90deg, var(--green), var(--blue));
+  border: none;
+  border-radius: 12px;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:hover {
+  opacity: .95;
+}
+
+
+/* ===== Inputs de selección (checkbox & radio) ===== */
+.form-group label {
+  cursor: pointer;
+}
+
+.form-group input[type="checkbox"],
+.form-group input[type="radio"] {
+  margin: 0;
+  width: 16px;
+  height: 16px;
+  accent-color: #3259fd;
+  flex-shrink: 0;
+}
+
+.form-group .choice {
+  display: flex;
+  align-items: center;
+  gap: 10px; /* CONTROL FINO DEL ESPACIO */
+}
+
+.auth-logo {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 28px;
+  padding-top: 4px;
+}
+
+.auth-logo img {
+  height: 40px;          /* tamaño ideal fintech */
+  width: auto;
+  max-width: 170px;      /* evita que se estire */
+  opacity: 0.95;         /* sutil, premium */
+  filter: saturate(0.95);
+}
+
+
+.form-feedback {
+  font-size: 13px;
+  margin-top: 6px;
+  min-height: 16px;
+}
+
+.form-feedback.error {
+  color: #dc2626; /* rojo suave */
+}
+
+.form-feedback.success {
+  color: #16a34a; /* verde elegante */
+}
+
+button[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.success-visual {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  opacity: 0;
+  transform: scale(0.9);
+  animation: successIn 0.7s ease-out forwards;
+
+  box-shadow: 0 0 0 8px rgba(22,163,74,0.06);
+  border-radius: 50%;
+}
+
+
+.success-visual img {
+  width: 36px;
+  height: 36px;
+  display: block;
+}
+
+
+@keyframes successIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+
+
+
+.confetti-layer {
+  position:absolute;
+  top:0;
+  left:0;
+  width:100%;
+  height:100%;
+  pointer-events:none;
+  overflow:hidden;
+}
+
+.confetti-layer::before,
+.confetti-layer::after {
+  content: '';
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  background: rgba(22, 163, 74, 0.9); /* verde éxito, no chillón */
+  border-radius: 50%;
+  opacity: 0;
+  animation: confetti 1s ease-out forwards;
+}
+
+
+.confetti-layer::before {
+  left:45%;
+  top:30%;
+}
+
+.confetti-layer::after {
+  left:55%;
+  top:32%;
+  animation-delay:0.1s;
+}
+
+@keyframes confetti {
+  0% {
+    opacity:0;
+    transform:translateY(0) scale(0.6);
+  }
+  30% {
+    opacity:1;
+  }
+  100% {
+    opacity:0;
+    transform:translateY(-40px) scale(1);
+  }
+}
+
+
+.auth-card h2,
+.auth-card p,
+.auth-card .form-group {
+  opacity:0;
+  animation: fadeUp 0.6s ease-out forwards;
+}
+
+.auth-card h2 { animation-delay:0.4s; }
+.auth-card p { animation-delay:0.55s; }
+.auth-card .form-group { animation-delay:0.7s; }
+
+@keyframes fadeUp {
+  from {
+    opacity:0;
+    transform:translateY(8px);
+  }
+  to {
+    opacity:1;
+    transform:translateY(0);
+  }
+}
+
+.success-wrapper {
+  position: relative;
+  width: fit-content;
+  margin: 0 auto 18px;
+}
+
+
+/* =========================
+   DASHBOARD KBPPAY
+========================= */
+
+.dashboard-card {
+  max-width: 460px;
+}
+
+/* Header */
+.dashboard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 22px;
+}
+
+.dashboard-header img {
+  height: 34px;
+}
+
+/* Avatar */
+.avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--green), var(--blue));
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: .5px;
+}
+
+
+/* Lista de transacciones */
+.tx-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+
+}
+
+.tx-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+}
+
+.tx-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tx-name {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.tx-fav {
+  font-size: 14px;
+}
+
+/* Estados */
+.tx-status {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.status-ok {
+  background: rgba(82,174,50,.12);
+  color: #166534;
+}
+
+.status-pending {
+  background: rgba(50,89,253,.12);
+  color: #1e3a8a;
+}
+
+.status-failed {
+  background: rgba(220,38,38,.12);
+  color: #7f1d1d;
+}
+
+/* CTA */
+.cta-primary {
+  display: block;
+  margin-top: 8px;
+}
+
+
+/* =========================
+   DASHBOARD – PERFIL CENTRADO
+========================= */
+
+.dashboard-centered {
+  text-align: center;
+}
+
+/* Logo */
+.dashboard-logo {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 32px;
+}
+
+.dashboard-logo img {
+  height: 42px;
+  width: auto;
+}
+
+/* Perfil */
+.dashboard-profile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* Avatar grande */
+.avatar-lg {
+  width: 64px;
+  height: 64px;
+  font-size: 18px;
+  margin-bottom: 12px;
+}
+
+/* Nombre */
+.dashboard-name {
+  margin: 0 0 4px;
+  font-size: 22px;
+}
+
+/* Bienvenida */
+.dashboard-welcome {
+  margin: 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+
+/* =========================
+   DASHBOARD – NIVEL PREMIUM
+========================= */
+
+/* Marca */
+.dashboard-brand {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 36px;
+}
+
+.dashboard-brand img {
+  height: 40px;
+  width: auto;
+  opacity: 0.95;
+}
+
+/* Perfil */
+.dashboard-profile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+/* Avatar premium */
+.avatar-elevated {
+  box-shadow:
+    0 4px 12px rgba(0,0,0,0.12),
+    0 0 0 4px rgba(82,174,50,0.06);
+}
+
+
+/* Nombre */
+.dashboard-name {
+  margin-top: 6px;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* Bienvenida */
+.dashboard-welcome {
+  font-size: 14px;
+  color: var(--muted);
+}
+
+
+/* =========================
+   TRANSACCIONES – LISTADO
+========================= */
+
+.tx-list {
+  margin-top: 32px;
+}
+
+.tx-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+  transition: background 0.2s ease;
+}
+
+.tx-item:hover {
+  background: #f9fafb;
+}
+
+.tx-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tx-name {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.tx-meta {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.tx-fav {
+  color: #facc15;
+  font-size: 14px;
+}
+
+.tx-right {
+  text-align: right;
+}
+
+.tx-amount {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+
+/* ======================================================
+   Dashboard Subnav fija inferior
+   ====================================================== */
+
+.dashboard-subnav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  padding: 16px 20px calc(16px + env(safe-area-inset-bottom));
+  background: linear-gradient(
+  to top,
+  rgba(255,255,255,1),
+  rgba(255,255,255,0.96)
+);
+backdrop-filter: saturate(1.2) blur(6px);
+border-top: 1px solid rgba(0,0,0,0.06);
+  display: flex;
+  justify-content: center;
+  z-index: 50;
+}
+
+/* Botón principal */
+.btn-new-tx {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  max-width: 420px;
+  height: 52px;
+
+  font-size: 16px;
+  font-weight: 600;
+  text-decoration: none;
+
+  border-radius: 12px;
+  background: linear-gradient(135deg, #0f766e, #14b8a6);
+  color: #ffffff;
+
+box-shadow:
+  0 4px 12px rgba(0,0,0,0.12),
+  inset 0 1px 0 rgba(255,255,255,0.25);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.btn-new-tx:hover {
+transform: translateY(-0.5px);
+box-shadow:
+  0 6px 16px rgba(0,0,0,0.16),
+  inset 0 1px 0 rgba(255,255,255,0.3);
+}
+
+/* Espacio inferior para que el scroll no quede tapado */
+.dashboard-card {
+  padding-bottom: 104px;
+}
+
+
+.dashboard-subnav.is-scrolling {
+  box-shadow: none;
+  border-top-color: rgba(0,0,0,0.04);
+}
+
+
+
+/* =========================
+   Subnav – botón de marca
+========================= */
+
+.dashboard-subnav form {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.dashboard-subnav button {
+  width: 100%;
+  max-width: 420px;
+  height: 52px;
+  font-size: 16px;
+}
+
+
+.dashboard-subnav button {
+  box-shadow:
+    0 6px 18px rgba(0,0,0,0.14);
+}
+
+.dashboard-subnav button:hover {
+  opacity: 0.98;
+}
+
+
+/* =========================
+   Dashboard – acción principal integrada
+========================= */
+
+.dashboard-action {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.dashboard-action button {
+  width: 100%;
+}
+
+
+
+.phone-field {
+  display: flex;
+  gap: 10px;
+}
+
+.phone-field select {
+  width: 110px;
+  padding: 12px 10px;
+  border-radius: 12px;
+  border: 1.5px solid #e5e7eb;
+  background: #fafafa;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.phone-field input[type="tel"] {
+  flex: 1;
+}
+
+.phone-field select:focus,
+.phone-field input:focus {
+  outline: none;
+  border-color: #3259fd;
+  background: #fff;
+}
+
+
+/* =========================
+   Confirmation – Actions Fix
+========================= */
+
+.confirmation-actions {
+  margin-top: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* CTA PRINCIPAL: DASHBOARD */
+.confirmation-actions .btn-primary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 52px;
+  width: 100%;
+  border-radius: 14px;
+  background: linear-gradient(90deg, var(--green), var(--blue));
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  text-decoration: none;
+  box-shadow:
+    0 8px 24px rgba(0,0,0,0.16),
+    inset 0 1px 0 rgba(255,255,255,0.25);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.confirmation-actions .btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 10px 28px rgba(0,0,0,0.2),
+    inset 0 1px 0 rgba(255,255,255,0.3);
+}
+
+/* CTA SECUNDARIO: EMAIL (ANULA BUTTON GLOBAL) */
+.confirmation-actions .btn-link {
+  background: none !important;
+  border: none !important;
+  padding: 0 !important;
+  height: auto !important;
+  width: auto !important;
+
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--blue);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.confirmation-actions .btn-link:hover {
+  opacity: 0.85;
+}
+
+/* Microcopy */
+.confirmation-actions .confirmation-hint {
+  font-size: 12.5px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+
+.phone-group {
+  display: flex;
+  gap: 8px;
+}
+
+.phone-group select {
+  width: 160px;
+}
+
+.phone-group input {
+  flex: 1;
+}
+
+
+/* Divider elegante */
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 24px 0 16px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: #e6e6e6;
+}
+
+/* CTA secundario premium */
+.cta-secondary {
+  display: block;
+  text-align: center;
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px solid #e0e0e0;
+  text-decoration: none;
+  background: #fafafa;
+  transition: all 0.25s ease;
+}
+
+.cta-secondary strong {
+  display: block;
+  font-size: 15px;
+  color: #111;
+}
+
+.cta-secondary span {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.cta-secondary:hover {
+  background: #ffffff;
+  border-color: #cfcfcf;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.06);
+  transform: translateY(-1px);
+}
+
+
+/* Separador ultra sutil */
+.auth-separator {
+  height: 1px;
+  background: rgba(0,0,0,0.06);
+  margin: 28px 0;
+}
+
+/* CTA onboarding como tarjeta */
+.cta-onboarding {
+  display: block;
+  text-align: center;
+  padding: 18px 16px;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid rgba(0,0,0,0.06);
+  text-decoration: none;
+  transition: all 0.25s ease;
+}
+
+/* Texto contextual (NO parece link) */
+.cta-context {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+/* Acción principal */
+.cta-title {
+  display: block;
+  font-size: 16px;
+  color: #111;
+}
+
+/* Beneficios */
+.cta-sub {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* Hover / tap feedback */
+.cta-onboarding:hover {
+  border-color: rgba(0,0,0,0.12);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.06);
+  transform: translateY(-1px);
+}
+
