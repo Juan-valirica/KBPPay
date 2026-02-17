@@ -809,7 +809,7 @@ body { scrollbar-width:none; }
     </a>
 
     <!-- Ayuda -->
-    <a class="nav-item" href="#">
+    <a class="nav-item" href="/app/pay/ayuda.php">
       <span class="nav-icon">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="10"/>
