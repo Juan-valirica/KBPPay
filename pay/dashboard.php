@@ -797,7 +797,7 @@ body { scrollbar-width:none; }
     </a>
 
     <!-- Métodos de pago -->
-    <a class="nav-item" href="#">
+    <a class="nav-item" href="/app/pay/metodos.php">
       <span class="nav-icon">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
           <rect x="1" y="4" width="22" height="16" rx="2" ry="2"/>
