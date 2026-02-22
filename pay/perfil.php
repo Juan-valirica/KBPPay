@@ -25,6 +25,7 @@ $avatarInitials = mb_strtoupper(
     mb_substr($firstName, 0, 1, 'UTF-8') . mb_substr($lastName, 0, 1, 'UTF-8'),
     'UTF-8'
 );
+$isAdmin = strtolower(trim($user['email'] ?? '')) === 'hola@kbppay.es';
 
 // Fecha de registro formateada
 $mesesEs = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
@@ -1307,6 +1308,17 @@ body { scrollbar-width:none; }
       <span class="nav-label">Perfil</span>
       <span class="nav-indicator"></span>
     </a>
+    <?php if ($isAdmin): ?>
+    <a class="nav-item nav-admin" href="/app/pay/admin.php" style="color:rgba(167,139,250,0.6);">
+      <span class="nav-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        </svg>
+      </span>
+      <span class="nav-label">Admin</span>
+      <span class="nav-indicator" style="background:rgba(167,139,250,0.8);"></span>
+    </a>
+    <?php endif; ?>
   </div>
 </nav>
 

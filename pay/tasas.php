@@ -3,9 +3,10 @@ require_once __DIR__ . '/auth/middleware.php';
 require_once __DIR__ . '/config/database.php';
 
 // Datos del usuario para el header avatar
-$stmt = $pdo->prepare("SELECT first_name, last_name FROM users WHERE id = ? LIMIT 1");
+$stmt = $pdo->prepare("SELECT first_name, last_name, email FROM users WHERE id = ? LIMIT 1");
 $stmt->execute([$_SESSION['user_id']]);
 $user = $stmt->fetch();
+$isAdmin = strtolower(trim($user['email'] ?? '')) === 'hola@kbppay.es';
 
 function normalizeName(?string $name): string {
     if ($name === null) return '';
@@ -950,6 +951,17 @@ body { scrollbar-width:none; }
       <span class="nav-label">Perfil</span>
       <span class="nav-indicator"></span>
     </a>
+    <?php if ($isAdmin): ?>
+    <a class="nav-item nav-admin" href="/app/pay/admin.php" style="color:rgba(167,139,250,0.6);">
+      <span class="nav-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        </svg>
+      </span>
+      <span class="nav-label">Admin</span>
+      <span class="nav-indicator" style="background:rgba(167,139,250,0.8);"></span>
+    </a>
+    <?php endif; ?>
   </div>
 </nav>
 
