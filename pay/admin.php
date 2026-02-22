@@ -16,6 +16,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
     exit;
 }
 
+/* ── POST: actualizar estado transacción ── */
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'update_tx_status') {
+    $txId   = (int)($_POST['tx_id']       ?? 0);
+    $status = trim($_POST['new_status']   ?? '');
+    $reason = trim($_POST['failed_reason'] ?? '');
+    $valid  = ['pending','paid','completed','cancelled'];
+    if ($txId > 0 && in_array($status, $valid, true)) {
+        $pdo->prepare("UPDATE transactions SET status = ?, failed_reason = ? WHERE id = ?")
+            ->execute([$status, $status === 'cancelled' ? $reason : null, $txId]);
+        $sub = in_array($status, ['paid','completed','cancelled']) ? 'gestionados' : 'pendientes';
+        header("Location: /app/pay/admin.php?tab=movimientos&sub={$sub}&msg=tx_ok");
+    } else {
+        header("Location: /app/pay/admin.php?tab=movimientos&msg=tx_err");
+    }
+    exit;
+}
+
 /* ── Datos admin ── */
 $stmtA = $pdo->prepare("SELECT first_name, last_name, email FROM users WHERE id = ? LIMIT 1");
 $stmtA->execute([$_SESSION['user_id']]);
@@ -33,8 +50,41 @@ $usdRate    = (float)($rates['USD']['rate_to_ves'] ?? 0);
 $eurUpdated = $rates['EUR']['updated_at'] ?? null;
 $usdUpdated = $rates['USD']['updated_at'] ?? null;
 
+/* ── Transacciones ── */
+$txSQL = "
+    SELECT
+        t.id, t.amount, t.currency, t.commission, t.exchange_rate,
+        t.amount_received, t.total_to_pay, t.status, t.failed_reason, t.created_at,
+        COALESCE(u.first_name,'')             AS u_first,
+        COALESCE(u.last_name,'')              AS u_last,
+        COALESCE(u.email,'')                  AS u_email,
+        COALESCE(b.first_name,'')             AS b_first,
+        COALESCE(b.last_name,'')              AS b_last,
+        COALESCE(b.bank_name,'')              AS b_bank,
+        COALESCE(b.account_number,'')         AS b_account,
+        COALESCE(b.account_type,'')           AS b_actype,
+        COALESCE(b.id_type,'')                AS b_idtype,
+        COALESCE(b.id_number,'')              AS b_idnum,
+        COALESCE(b.email,'')                  AS b_email,
+        COALESCE(b.residence_country,'')      AS b_country,
+        COALESCE(b.send_reason,'')            AS b_reason,
+        COALESCE(b.relation_beneficiary,'')   AS b_relation
+    FROM transactions t
+    LEFT JOIN users        u ON u.id = t.user_id
+    LEFT JOIN beneficiaries b ON b.id = t.beneficiary_id
+";
+$pendingTx = $pdo->query($txSQL . " WHERE t.status = 'pending' ORDER BY t.created_at ASC")->fetchAll();
+$managedTx = $pdo->query($txSQL . " WHERE t.status IN ('paid','completed','cancelled') ORDER BY t.created_at DESC LIMIT 100")->fetchAll();
+
+/* mapa id→tx para JS */
+$txMap = [];
+foreach (array_merge($pendingTx, $managedTx) as $t) {
+    $txMap[(int)$t['id']] = $t;
+}
+
 /* ── Page state ── */
 $activeTab = $_GET['tab'] ?? 'tasas';
+$activeSub = ($_GET['sub'] ?? '') === 'gestionados' ? 'gestionados' : 'pendientes';
 $msgParam  = $_GET['msg'] ?? '';
 $curParam  = strtoupper($_GET['cur'] ?? '');
 
@@ -45,10 +95,17 @@ function fmtUpd(?string $d, array $m): string {
     return 'Actualizada el ' . date('d',$t) . ' ' . $m[(int)date('m',$t)-1] . ' · ' . date('H:i',$t);
 }
 
+/* helper: title-case UTF-8 */
+function tc(string $s): string {
+    return mb_convert_case(mb_strtolower(trim($s), 'UTF-8'), MB_CASE_TITLE, 'UTF-8');
+}
+
 /* ── Toast ── */
 $toasts = [
     'rate_ok'  => ['msg' => "Tasa {$curParam}/VES actualizada correctamente", 'type' => 'success'],
-    'rate_err' => ['msg' => 'Valor inválido — no se actualizó la tasa',         'type' => 'error'],
+    'rate_err' => ['msg' => 'Valor inválido — no se actualizó la tasa',        'type' => 'error'],
+    'tx_ok'    => ['msg' => 'Estado del envío actualizado',                    'type' => 'success'],
+    'tx_err'   => ['msg' => 'Error al actualizar el estado',                   'type' => 'error'],
 ];
 $toast = $toasts[$msgParam] ?? null;
 ?>
@@ -69,277 +126,433 @@ $toast = $toasts[$msgParam] ?? null;
 
 <style>
 :root {
-  --bg:              #0B0F1A;
-  --glass:           rgba(255,255,255,0.04);
-  --glass-hover:     rgba(255,255,255,0.07);
-  --glass-border:    rgba(255,255,255,0.07);
-  --text:            #FFFFFF;
-  --text-secondary:  rgba(255,255,255,0.65);
-  --text-muted:      rgba(255,255,255,0.38);
-  --green:           #52ae32;
-  --blue:            #3259fd;
-  --gradient:        linear-gradient(135deg, #52ae32, #3259fd);
-  --admin-accent:    #a78bfa;
-  --admin-accent-bg: rgba(167,139,250,0.10);
-  --admin-border:    rgba(167,139,250,0.20);
-  --status-ok:       #34D399;
-  --status-ok-bg:    rgba(52,211,153,0.12);
-  --status-pending:  #FBBF24;
-  --status-pending-bg: rgba(251,191,36,0.12);
-  --status-failed:   #F87171;
+  --bg:               #0B0F1A;
+  --glass:            rgba(255,255,255,0.04);
+  --glass-hover:      rgba(255,255,255,0.07);
+  --glass-border:     rgba(255,255,255,0.07);
+  --text:             #FFFFFF;
+  --text-secondary:   rgba(255,255,255,0.65);
+  --text-muted:       rgba(255,255,255,0.38);
+  --green:            #52ae32;
+  --blue:             #3259fd;
+  --gradient:         linear-gradient(135deg, #52ae32, #3259fd);
+  --admin-accent:     #a78bfa;
+  --admin-accent-bg:  rgba(167,139,250,0.10);
+  --admin-border:     rgba(167,139,250,0.20);
+  --status-ok:        #34D399;
+  --status-ok-bg:     rgba(52,211,153,0.12);
+  --status-pending:   #FBBF24;
+  --status-pending-bg:rgba(251,191,36,0.12);
+  --status-paid:      #60a5fa;
+  --status-paid-bg:   rgba(96,165,250,0.12);
+  --status-failed:    #F87171;
   --status-failed-bg: rgba(248,113,113,0.12);
-  --radius:          16px;
-  --nav-h:           68px;
-  --header-h:        60px;
-  --safe-top:        env(safe-area-inset-top, 0px);
-  --safe-bottom:     env(safe-area-inset-bottom, 0px);
+  --radius:           16px;
+  --nav-h:            68px;
+  --header-h:         60px;
+  --safe-top:         env(safe-area-inset-top,    0px);
+  --safe-bottom:      env(safe-area-inset-bottom, 0px);
 }
 
 *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
 html { height:100%; -webkit-text-size-adjust:100%; }
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  background: var(--bg);
-  color: var(--text);
-  min-height: 100%;
-  overflow-x: hidden;
-  -webkit-font-smoothing: antialiased;
+  background: var(--bg); color: var(--text);
+  min-height:100%; overflow-x:hidden;
+  -webkit-font-smoothing:antialiased;
 }
 body::before {
-  content: '';
-  position: fixed; inset: 0;
+  content:''; position:fixed; inset:0;
   background:
     radial-gradient(ellipse 60% 50% at 15% 10%, rgba(167,139,250,0.08) 0%, transparent 60%),
     radial-gradient(ellipse 50% 60% at 85% 90%, rgba(50,89,253,0.10) 0%, transparent 60%);
-  pointer-events: none; z-index: 0;
+  pointer-events:none; z-index:0;
 }
 body::-webkit-scrollbar { width:0; }
 body { scrollbar-width:none; }
 
 /* ── HEADER ── */
 .app-header {
-  position: fixed; top:0; left:0; right:0; z-index:100;
-  padding-top: var(--safe-top);
-  background: rgba(11,15,26,0.75);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  border-bottom: 1px solid rgba(167,139,250,0.12);
+  position:fixed; top:0; left:0; right:0; z-index:100;
+  padding-top:var(--safe-top);
+  background:rgba(11,15,26,0.75);
+  backdrop-filter:blur(24px) saturate(180%);
+  -webkit-backdrop-filter:blur(24px) saturate(180%);
+  border-bottom:1px solid rgba(167,139,250,0.12);
 }
 .header-inner {
   display:flex; align-items:center; justify-content:space-between;
-  height: var(--header-h); padding:0 20px;
+  height:var(--header-h); padding:0 20px;
   max-width:520px; margin:0 auto;
 }
-.header-logo { height:28px; width:auto; display:block; }
+.header-logo   { height:28px; width:auto; display:block; }
 .header-avatar {
   width:36px; height:36px; border-radius:50%;
-  background: var(--gradient); color:#fff;
+  background:var(--gradient); color:#fff;
   display:flex; align-items:center; justify-content:center;
   font-weight:700; font-size:12px; flex-shrink:0;
-  box-shadow: 0 2px 8px rgba(167,139,250,0.3);
+  box-shadow:0 2px 8px rgba(167,139,250,0.3);
 }
 
 /* ── CONTENT ── */
 .app-content {
   position:relative; z-index:1;
   max-width:520px; margin:0 auto;
-  padding: calc(var(--header-h) + var(--safe-top) + 24px) 20px calc(var(--nav-h) + var(--safe-bottom) + 32px);
+  padding:calc(var(--header-h) + var(--safe-top) + 24px) 20px calc(var(--nav-h) + var(--safe-bottom) + 32px);
   min-height:100vh;
 }
 
 /* ── HERO ── */
-.admin-hero { margin-bottom:24px; animation: fadeInUp 0.4s ease both; }
+.admin-hero { margin-bottom:24px; animation:fadeInUp 0.4s ease both; }
 .admin-badge {
   display:inline-flex; align-items:center; gap:6px;
   padding:5px 12px 5px 8px;
-  background: var(--admin-accent-bg);
-  border:1px solid var(--admin-border); border-radius:20px;
-  margin-bottom:12px;
+  background:var(--admin-accent-bg); border:1px solid var(--admin-border);
+  border-radius:20px; margin-bottom:12px;
 }
 .admin-badge-dot {
   width:6px; height:6px; border-radius:50%;
-  background: var(--admin-accent);
-  box-shadow: 0 0 6px var(--admin-accent);
-  animation: pulse 2s ease infinite;
+  background:var(--admin-accent); box-shadow:0 0 6px var(--admin-accent);
+  animation:pulse 2s ease infinite;
 }
 .admin-badge-text { font-size:11px; font-weight:600; color:var(--admin-accent); letter-spacing:.06em; text-transform:uppercase; }
 .admin-title { font-size:26px; font-weight:700; letter-spacing:-.02em; line-height:1.2; margin-bottom:4px; }
 .admin-sub   { font-size:13px; color:var(--text-muted); }
 
-/* ── TABS ── */
+/* ── MAIN TABS ── */
 .tab-nav {
   display:flex; gap:6px; margin-bottom:24px;
-  background: var(--glass); border:1px solid var(--glass-border);
+  background:var(--glass); border:1px solid var(--glass-border);
   border-radius:12px; padding:4px;
-  animation: fadeInUp 0.4s ease 0.05s both;
+  animation:fadeInUp 0.4s ease 0.05s both;
 }
 .tab-btn {
   flex:1; padding:9px 4px; border-radius:9px; border:none;
   background:transparent; color:var(--text-muted);
   font-family:inherit; font-size:13px; font-weight:500;
-  cursor:pointer; transition: all .2s ease;
+  cursor:pointer; transition:all .2s ease;
   display:flex; align-items:center; justify-content:center; gap:6px;
-  -webkit-tap-highlight-color: transparent;
+  -webkit-tap-highlight-color:transparent;
 }
 .tab-btn:hover { color:var(--text-secondary); }
-.tab-btn.active {
-  background: var(--admin-accent-bg);
-  color: var(--admin-accent);
-  border:1px solid var(--admin-border);
-}
+.tab-btn.active { background:var(--admin-accent-bg); color:var(--admin-accent); border:1px solid var(--admin-border); }
 .tab-badge {
-  background: var(--status-pending);
-  color: #000; font-size:10px; font-weight:700;
-  padding:1px 6px; border-radius:20px; line-height:1.6;
+  background:var(--status-pending); color:#000;
+  font-size:10px; font-weight:700; padding:1px 6px; border-radius:20px; line-height:1.6;
 }
-
-/* ── TAB SECTIONS ── */
 .tab-section { display:none; }
 .tab-section.active { display:block; }
 
 /* ── RATE CARDS ── */
 .rate-cards { display:flex; flex-direction:column; gap:12px; }
 .rate-card {
-  background: var(--glass);
-  border:1px solid var(--glass-border);
-  border-radius: var(--radius);
-  overflow:hidden;
-  animation: fadeInUp 0.4s ease both;
+  background:var(--glass); border:1px solid var(--glass-border);
+  border-radius:var(--radius); overflow:hidden;
+  animation:fadeInUp 0.4s ease both;
 }
 .rate-card:nth-child(1) { animation-delay:.08s; }
 .rate-card:nth-child(2) { animation-delay:.14s; }
-.rate-card-header {
-  display:flex; align-items:center; justify-content:space-between;
-  padding:16px 16px 0;
-}
+.rate-card-header { display:flex; align-items:center; justify-content:space-between; padding:16px 16px 0; }
 .rate-flag {
   width:36px; height:36px; border-radius:10px;
-  background: var(--admin-accent-bg); border:1px solid var(--admin-border);
+  background:var(--admin-accent-bg); border:1px solid var(--admin-border);
   display:flex; align-items:center; justify-content:center;
   font-size:20px; flex-shrink:0;
 }
 .rate-cur-label { font-size:13px; font-weight:600; color:var(--text-secondary); }
 .rate-cur-name  { font-size:11px; color:var(--text-muted); margin-top:2px; }
-.rate-current {
-  text-align:right;
-}
+.rate-current   { text-align:right; }
 .rate-current-value { font-size:22px; font-weight:700; letter-spacing:-.02em; }
 .rate-current-unit  { font-size:11px; color:var(--text-muted); margin-top:1px; }
-.rate-updated {
-  padding:8px 16px 12px;
-  font-size:11px; color:var(--text-muted);
-  border-bottom:1px solid var(--glass-border);
-}
-.rate-form {
-  padding:14px 16px;
-  display:flex; gap:8px; align-items:center;
-}
+.rate-updated { padding:8px 16px 12px; font-size:11px; color:var(--text-muted); border-bottom:1px solid var(--glass-border); }
+.rate-form { padding:14px 16px; display:flex; gap:8px; align-items:center; }
 .rate-input-wrap { flex:1; position:relative; }
-.rate-input-label {
-  position:absolute; top:8px; left:12px;
-  font-size:10px; font-weight:600; color:var(--text-muted); letter-spacing:.04em; text-transform:uppercase;
-}
+.rate-input-label { position:absolute; top:8px; left:12px; font-size:10px; font-weight:600; color:var(--text-muted); letter-spacing:.04em; text-transform:uppercase; }
 .rate-input {
   width:100%; padding:22px 12px 8px;
-  background: rgba(255,255,255,0.06);
-  border:1px solid rgba(255,255,255,0.10);
+  background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.10);
   border-radius:10px; color:var(--text);
   font-family:inherit; font-size:16px; font-weight:600;
-  outline:none; transition: border-color .2s;
-  -moz-appearance:textfield;
+  outline:none; transition:border-color .2s; -moz-appearance:textfield;
 }
 .rate-input::-webkit-outer-spin-button,
 .rate-input::-webkit-inner-spin-button { -webkit-appearance:none; }
-.rate-input:focus { border-color: var(--admin-accent); }
+.rate-input:focus { border-color:var(--admin-accent); }
 .rate-btn {
   height:52px; padding:0 18px;
-  background: var(--admin-accent-bg);
-  border:1px solid var(--admin-border);
+  background:var(--admin-accent-bg); border:1px solid var(--admin-border);
   border-radius:10px; color:var(--admin-accent);
   font-family:inherit; font-size:13px; font-weight:600;
-  cursor:pointer; transition: all .2s ease; white-space:nowrap;
-  -webkit-tap-highlight-color: transparent;
+  cursor:pointer; transition:all .2s ease; white-space:nowrap;
+  -webkit-tap-highlight-color:transparent;
 }
-.rate-btn:hover { background: rgba(167,139,250,0.18); }
-.rate-btn:active { transform: scale(.96); }
+.rate-btn:hover  { background:rgba(167,139,250,0.18); }
+.rate-btn:active { transform:scale(.96); }
+
+/* ── SUB-TABS (movimientos) ── */
+.sub-nav {
+  display:flex; gap:0; margin-bottom:16px;
+  border-bottom:1px solid var(--glass-border);
+}
+.sub-btn {
+  padding:9px 18px 11px; border:none; background:transparent;
+  color:var(--text-muted); font-family:inherit; font-size:13px; font-weight:500;
+  cursor:pointer; border-bottom:2px solid transparent;
+  transition:all .2s; margin-bottom:-1px;
+  -webkit-tap-highlight-color:transparent;
+  display:flex; align-items:center; gap:6px;
+}
+.sub-btn.active { color:var(--admin-accent); border-bottom-color:var(--admin-accent); }
+.sub-section { display:none; }
+.sub-section.active { display:block; }
+
+/* ── TX CARDS ── */
+.atx-list { display:flex; flex-direction:column; gap:8px; }
+.atx-card {
+  display:flex; align-items:center; gap:12px;
+  padding:13px 14px;
+  background:var(--glass); border:1px solid var(--glass-border);
+  border-radius:14px; cursor:pointer;
+  transition:background .2s, transform .15s;
+  -webkit-tap-highlight-color:transparent;
+}
+.atx-card:hover  { background:var(--glass-hover); }
+.atx-card:active { transform:scale(.985); }
+.atx-av {
+  width:38px; height:38px; border-radius:50%; flex-shrink:0;
+  background:var(--admin-accent-bg); border:1px solid var(--admin-border);
+  display:flex; align-items:center; justify-content:center;
+  font-size:13px; font-weight:700; color:var(--admin-accent);
+}
+.atx-info { flex:1; min-width:0; }
+.atx-names {
+  font-size:13px; font-weight:600;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.atx-names span { color:var(--text-muted); font-weight:400; }
+.atx-meta  { font-size:11px; color:var(--text-muted); margin-top:3px; }
+.atx-right { text-align:right; flex-shrink:0; }
+.atx-amount { font-size:13px; font-weight:700; white-space:nowrap; }
+.atx-badge {
+  display:inline-block; font-size:10px; font-weight:600;
+  padding:2px 8px; border-radius:20px; margin-top:4px;
+}
+.s-pending   { color:var(--status-pending);  background:var(--status-pending-bg); }
+.s-paid      { color:var(--status-paid);     background:var(--status-paid-bg); }
+.s-completed { color:var(--status-ok);       background:var(--status-ok-bg); }
+.s-cancelled { color:var(--status-failed);   background:var(--status-failed-bg); }
+
+/* ── EMPTY STATE ── */
+.empty-tx {
+  text-align:center; padding:48px 20px;
+  color:var(--text-muted); font-size:13px; line-height:1.6;
+}
+.empty-tx svg { width:28px; height:28px; margin:0 auto 12px; display:block; opacity:.3; }
+
+/* ── SHEET BACKDROP ── */
+.sheet-backdrop {
+  position:fixed; inset:0; z-index:300;
+  background:rgba(0,0,0,0.65);
+  backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px);
+  opacity:0; visibility:hidden;
+  transition:opacity .3s ease, visibility .3s ease;
+}
+.sheet-backdrop.open { opacity:1; visibility:visible; }
+
+/* ── DETAIL SHEET ── */
+.detail-sheet {
+  position:fixed; bottom:0; left:0; right:0; z-index:310;
+  max-width:520px; margin:0 auto;
+  background:#141826;
+  border:1px solid rgba(255,255,255,0.09);
+  border-bottom:none; border-radius:22px 22px 0 0;
+  max-height:91vh; display:flex; flex-direction:column;
+  transform:translateY(100%);
+  transition:transform .36s cubic-bezier(.32,.72,0,1);
+}
+.detail-sheet.open { transform:translateY(0); }
+
+.sheet-header {
+  padding:10px 18px 14px; flex-shrink:0;
+  border-bottom:1px solid rgba(255,255,255,0.06);
+}
+.sheet-drag {
+  width:36px; height:4px; border-radius:2px;
+  background:rgba(255,255,255,0.14); margin:0 auto 14px;
+}
+.sheet-header-row { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+.sheet-title  { font-size:17px; font-weight:700; margin-bottom:5px; }
+.sheet-close  {
+  width:30px; height:30px; border-radius:50%; flex-shrink:0;
+  background:rgba(255,255,255,0.08); border:none;
+  color:var(--text-muted); font-size:18px; line-height:1;
+  display:flex; align-items:center; justify-content:center;
+  cursor:pointer; transition:background .2s; margin-top:-2px;
+}
+.sheet-close:hover { background:rgba(255,255,255,0.13); }
+.sheet-status-badge {
+  display:inline-block; font-size:11px; font-weight:600;
+  padding:3px 10px; border-radius:20px;
+}
+
+.sheet-body {
+  flex:1; overflow-y:auto; padding:0 18px 6px;
+  -webkit-overflow-scrolling:touch;
+}
+.sheet-body::-webkit-scrollbar { width:0; }
+
+/* Amount hero */
+.sheet-amt-block {
+  padding:18px 0 14px;
+  border-bottom:1px solid rgba(255,255,255,0.06);
+  margin-bottom:14px;
+}
+.sheet-amt-main { font-size:30px; font-weight:700; letter-spacing:-.02em; }
+.sheet-amt-sub  { font-size:13px; color:var(--text-muted); margin-top:4px; }
+
+/* Info sections */
+.sheet-section { margin-bottom:14px; }
+.sheet-section-title {
+  font-size:10px; font-weight:600; color:var(--text-muted);
+  letter-spacing:.08em; text-transform:uppercase; margin-bottom:6px;
+}
+.sheet-rows {
+  background:var(--glass); border:1px solid var(--glass-border);
+  border-radius:12px; overflow:hidden;
+}
+.sheet-row {
+  display:flex; align-items:flex-start; justify-content:space-between;
+  padding:10px 13px; gap:14px;
+  border-bottom:1px solid rgba(255,255,255,0.04);
+}
+.sheet-row:last-child { border-bottom:none; }
+.sheet-row-label { font-size:12px; color:var(--text-muted); flex-shrink:0; padding-top:1px; }
+.sheet-row-value { font-size:12px; font-weight:500; text-align:right; word-break:break-word; }
+.sheet-row-cancelled .sheet-row-value { color:var(--status-failed); }
+
+/* ── SHEET FOOTER ── */
+.sheet-footer {
+  padding:13px 18px calc(var(--safe-bottom) + 13px);
+  border-top:1px solid rgba(255,255,255,0.06);
+  flex-shrink:0;
+}
+.sheet-footer-label {
+  font-size:10px; font-weight:600; color:var(--text-muted);
+  letter-spacing:.07em; text-transform:uppercase; margin-bottom:9px;
+}
+.status-pick-row { display:flex; gap:6px; margin-bottom:9px; flex-wrap:wrap; }
+.spick {
+  flex:1; min-width:62px; padding:9px 4px;
+  border-radius:9px; border:1px solid var(--glass-border);
+  background:var(--glass); color:var(--text-secondary);
+  font-family:inherit; font-size:12px; font-weight:600;
+  cursor:pointer; transition:all .2s; text-align:center;
+  -webkit-tap-highlight-color:transparent;
+}
+.spick:hover { background:var(--glass-hover); }
+.spick.sel-pending   { background:var(--status-pending-bg);  border-color:var(--status-pending);  color:var(--status-pending); }
+.spick.sel-paid      { background:var(--status-paid-bg);     border-color:var(--status-paid);     color:var(--status-paid); }
+.spick.sel-completed { background:var(--status-ok-bg);       border-color:var(--status-ok);       color:var(--status-ok); }
+.spick.sel-cancelled { background:var(--status-failed-bg);   border-color:var(--status-failed);   color:var(--status-failed); }
+
+.reason-group { margin-bottom:9px; }
+.reason-label { font-size:11px; color:var(--text-muted); margin-bottom:5px; }
+.reason-input {
+  width:100%; padding:10px 12px;
+  background:var(--glass); border:1px solid rgba(248,113,113,0.3);
+  border-radius:10px; color:var(--text);
+  font-family:inherit; font-size:13px; line-height:1.5;
+  resize:none; outline:none; min-height:70px;
+  transition:border-color .2s;
+}
+.reason-input:focus { border-color:var(--status-failed); }
+.reason-input::placeholder { color:var(--text-muted); }
+
+.sheet-confirm-btn {
+  width:100%; padding:14px; border-radius:12px; border:none;
+  background:var(--admin-accent-bg); border:1px solid var(--admin-border);
+  color:var(--admin-accent); font-family:inherit; font-size:14px; font-weight:600;
+  cursor:pointer; transition:all .2s;
+  opacity:.35; pointer-events:none;
+}
+.sheet-confirm-btn.ready { opacity:1; pointer-events:auto; }
+.sheet-confirm-btn.ready:hover  { background:rgba(167,139,250,0.18); }
+.sheet-confirm-btn.ready:active { transform:scale(.97); }
 
 /* ── MODAL ── */
 .modal-overlay {
   position:fixed; inset:0; z-index:400;
-  background: rgba(0,0,0,0.65);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  background:rgba(0,0,0,0.65);
+  backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
   display:flex; align-items:flex-end; justify-content:center;
-  padding-bottom: calc(var(--safe-bottom) + 16px);
+  padding-bottom:calc(var(--safe-bottom) + 16px);
   opacity:0; visibility:hidden;
-  transition: opacity .25s ease, visibility .25s ease;
+  transition:opacity .25s ease, visibility .25s ease;
 }
 .modal-overlay.open { opacity:1; visibility:visible; }
 .modal-box {
   width:100%; max-width:480px;
-  background: #181d2e;
-  border:1px solid rgba(255,255,255,0.08);
+  background:#181d2e; border:1px solid rgba(255,255,255,0.08);
   border-radius:20px; padding:24px;
-  transform: translateY(20px);
-  transition: transform .25s ease;
+  transform:translateY(20px); transition:transform .25s ease;
 }
-.modal-overlay.open .modal-box { transform: translateY(0); }
-.modal-title { font-size:16px; font-weight:700; margin-bottom:8px; }
-.modal-body  { font-size:14px; color:var(--text-secondary); line-height:1.6; margin-bottom:20px; }
+.modal-overlay.open .modal-box { transform:translateY(0); }
+.modal-title   { font-size:16px; font-weight:700; margin-bottom:8px; }
+.modal-body    { font-size:14px; color:var(--text-secondary); line-height:1.6; margin-bottom:20px; }
 .modal-body strong { color:var(--admin-accent); }
 .modal-actions { display:flex; gap:10px; }
-.modal-cancel {
+.modal-cancel  {
   flex:1; padding:13px; border-radius:10px;
-  background: var(--glass); border:1px solid var(--glass-border);
+  background:var(--glass); border:1px solid var(--glass-border);
   color:var(--text-secondary); font-family:inherit; font-size:14px; font-weight:600;
-  cursor:pointer; transition: background .2s;
+  cursor:pointer; transition:background .2s;
 }
-.modal-cancel:hover { background: var(--glass-hover); }
+.modal-cancel:hover { background:var(--glass-hover); }
 .modal-confirm {
   flex:2; padding:13px; border-radius:10px;
-  background: var(--admin-accent-bg);
-  border:1px solid var(--admin-border);
+  background:var(--admin-accent-bg); border:1px solid var(--admin-border);
   color:var(--admin-accent); font-family:inherit; font-size:14px; font-weight:600;
-  cursor:pointer; transition: all .2s;
+  cursor:pointer; transition:all .2s;
 }
-.modal-confirm:hover { background: rgba(167,139,250,0.18); }
-.modal-confirm:active { transform: scale(.97); }
+.modal-confirm:hover  { background:rgba(167,139,250,0.18); }
+.modal-confirm:active { transform:scale(.97); }
 
 /* ── TOAST ── */
 .toast {
-  position:fixed; bottom: calc(var(--nav-h) + var(--safe-bottom) + 16px);
-  left:50%; transform: translateX(-50%) translateY(8px);
-  z-index:500; padding:11px 20px;
-  border-radius:25px; font-size:13px; font-weight:500;
-  white-space:nowrap; pointer-events:none;
-  opacity:0; transition: opacity .3s ease, transform .3s ease;
+  position:fixed; bottom:calc(var(--nav-h) + var(--safe-bottom) + 16px);
+  left:50%; transform:translateX(-50%) translateY(8px);
+  z-index:500; padding:11px 20px; border-radius:25px;
+  font-size:13px; font-weight:500; white-space:nowrap;
+  pointer-events:none; opacity:0;
+  transition:opacity .3s ease, transform .3s ease;
 }
-.toast.show { opacity:1; transform: translateX(-50%) translateY(0); }
-.toast-success { background:#1a3d1a; border:1px solid rgba(52,211,153,.3); color: var(--status-ok); }
-.toast-error   { background:#3d1a1a; border:1px solid rgba(248,113,113,.3); color: var(--status-failed); }
+.toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+.toast-success { background:#1a3d1a; border:1px solid rgba(52,211,153,.3); color:var(--status-ok); }
+.toast-error   { background:#3d1a1a; border:1px solid rgba(248,113,113,.3); color:var(--status-failed); }
 
-/* ── COMING SOON placeholder ── */
+/* ── COMING SOON ── */
 .coming-card {
-  background: var(--glass); border:1px dashed rgba(167,139,250,0.2);
-  border-radius: var(--radius); padding:40px 20px;
+  background:var(--glass); border:1px dashed rgba(167,139,250,0.2);
+  border-radius:var(--radius); padding:40px 20px;
   text-align:center; color:var(--text-muted); font-size:14px;
-  animation: fadeInUp 0.4s ease both;
+  animation:fadeInUp 0.4s ease both;
 }
 .coming-card svg { width:32px; height:32px; margin-bottom:12px; opacity:.4; }
 
 /* ── BOTTOM NAV ── */
 .bottom-nav {
   position:fixed; bottom:0; left:0; right:0; z-index:100;
-  background: rgba(11,15,26,0.82);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  background:rgba(11,15,26,0.82);
+  backdrop-filter:blur(24px) saturate(180%);
+  -webkit-backdrop-filter:blur(24px) saturate(180%);
   border-top:1px solid rgba(255,255,255,0.05);
-  padding-bottom: var(--safe-bottom);
-  animation: slideUp 0.4s ease 0.2s both;
+  padding-bottom:var(--safe-bottom);
+  animation:slideUp 0.4s ease 0.2s both;
 }
 .nav-inner {
   display:flex; align-items:center; justify-content:space-around;
-  height: var(--nav-h); max-width:520px; margin:0 auto; padding:0 4px;
+  height:var(--nav-h); max-width:520px; margin:0 auto; padding:0 4px;
 }
 .nav-item {
   display:flex; flex-direction:column; align-items:center; justify-content:center;
@@ -351,13 +564,13 @@ body { scrollbar-width:none; }
 .nav-item:hover { color:var(--text-secondary); }
 .nav-item.active { color:var(--admin-accent); }
 .nav-item.active .nav-indicator { opacity:1; transform:scaleX(1); background:var(--admin-accent); }
-.nav-icon { width:22px; height:22px; display:flex; align-items:center; justify-content:center; }
+.nav-icon  { width:22px; height:22px; display:flex; align-items:center; justify-content:center; }
 .nav-icon svg { width:22px; height:22px; }
 .nav-label { font-size:10px; font-weight:500; letter-spacing:.01em; white-space:nowrap; }
 .nav-indicator {
   width:16px; height:2px; border-radius:1px;
-  background: var(--gradient); opacity:0; transform:scaleX(0);
-  transition: all .2s ease;
+  background:var(--gradient); opacity:0; transform:scaleX(0);
+  transition:all .2s ease;
 }
 
 /* ── ANIMATIONS ── */
@@ -414,7 +627,12 @@ body { scrollbar-width:none; }
   <!-- Tab nav -->
   <div class="tab-nav">
     <button class="tab-btn" data-tab="tasas">Tasas</button>
-    <button class="tab-btn" data-tab="movimientos">Movimientos</button>
+    <button class="tab-btn" data-tab="movimientos">
+      Movimientos
+      <?php if (count($pendingTx) > 0): ?>
+        <span class="tab-badge"><?= count($pendingTx) ?></span>
+      <?php endif; ?>
+    </button>
     <button class="tab-btn" data-tab="analitica">Analítica</button>
   </div>
 
@@ -486,17 +704,111 @@ body { scrollbar-width:none; }
   </div><!-- /tasas -->
 
   <!-- ═══════════════════════════════
-       SECCIÓN: MOVIMIENTOS (próximo)
+       SECCIÓN: MOVIMIENTOS
        ═══════════════════════════════ -->
   <div class="tab-section" id="section-movimientos">
-    <div class="coming-card">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M8 3L4 7l4 4"/><path d="M4 7h16"/>
-        <path d="M16 21l4-4-4-4"/><path d="M20 17H4"/>
-      </svg>
-      <div>Módulo de movimientos — próximamente</div>
+
+    <!-- Sub-tabs -->
+    <div class="sub-nav">
+      <button class="sub-btn" data-sub="pendientes">
+        Pendientes
+        <?php if (count($pendingTx) > 0): ?>
+          <span class="tab-badge"><?= count($pendingTx) ?></span>
+        <?php endif; ?>
+      </button>
+      <button class="sub-btn" data-sub="gestionados">Gestionados</button>
     </div>
-  </div>
+
+    <!-- SUB: Pendientes -->
+    <div class="sub-section" id="sub-pendientes">
+      <?php if (empty($pendingTx)): ?>
+        <div class="empty-tx">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 3L4 7l4 4"/><path d="M4 7h16"/>
+            <path d="M16 21l4-4-4-4"/><path d="M20 17H4"/>
+          </svg>
+          No hay envíos pendientes
+        </div>
+      <?php else: ?>
+        <div class="atx-list">
+          <?php foreach ($pendingTx as $tx): ?>
+            <?php
+              $bFirst = tc($tx['b_first']); $bLast = tc($tx['b_last']);
+              $uFirst = tc($tx['u_first']); $uLast = tc($tx['u_last']);
+              $bName  = trim($bFirst . ' ' . $bLast) ?: 'Destinatario';
+              $uShort = explode(' ', $uFirst)[0] ?: 'Remitente';
+              $ini    = mb_strtoupper(mb_substr($bFirst,0,1,'UTF-8').mb_substr($bLast,0,1,'UTF-8'),'UTF-8') ?: '?';
+              $ts     = strtotime($tx['created_at']);
+              $fecha  = date('d',$ts) . ' ' . $meses[(int)date('m',$ts)-1];
+              $bank   = tc($tx['b_bank']) ?: '—';
+            ?>
+            <div class="atx-card" onclick="openSheet(<?= (int)$tx['id'] ?>)">
+              <div class="atx-av"><?= htmlspecialchars($ini) ?></div>
+              <div class="atx-info">
+                <div class="atx-names">
+                  <?= htmlspecialchars($uShort) ?> <span>→</span> <?= htmlspecialchars($bName) ?>
+                </div>
+                <div class="atx-meta"><?= htmlspecialchars($bank) ?> · <?= $fecha ?></div>
+              </div>
+              <div class="atx-right">
+                <div class="atx-amount"><?= strtoupper(htmlspecialchars($tx['currency'])) ?> <?= number_format((float)$tx['amount'], 2) ?></div>
+                <span class="atx-badge s-pending">Pendiente</span>
+              </div>
+            </div>
+          <?php endforeach; ?>
+        </div>
+      <?php endif; ?>
+    </div><!-- /pendientes -->
+
+    <!-- SUB: Gestionados -->
+    <div class="sub-section" id="sub-gestionados">
+      <?php if (empty($managedTx)): ?>
+        <div class="empty-tx">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="20" x2="18" y2="10"/>
+            <line x1="12" y1="20" x2="12" y2="4"/>
+            <line x1="6"  y1="20" x2="6"  y2="14"/>
+          </svg>
+          Aún no hay envíos gestionados
+        </div>
+      <?php else: ?>
+        <div class="atx-list">
+          <?php
+            $sLabels = ['paid'=>'Pagado','completed'=>'Completado','cancelled'=>'Cancelado'];
+            $sCls    = ['paid'=>'s-paid','completed'=>'s-completed','cancelled'=>'s-cancelled'];
+          ?>
+          <?php foreach ($managedTx as $tx): ?>
+            <?php
+              $bFirst = tc($tx['b_first']); $bLast = tc($tx['b_last']);
+              $uFirst = tc($tx['u_first']); $uLast = tc($tx['u_last']);
+              $bName  = trim($bFirst . ' ' . $bLast) ?: 'Destinatario';
+              $uShort = explode(' ', $uFirst)[0] ?: 'Remitente';
+              $ini    = mb_strtoupper(mb_substr($bFirst,0,1,'UTF-8').mb_substr($bLast,0,1,'UTF-8'),'UTF-8') ?: '?';
+              $ts     = strtotime($tx['created_at']);
+              $fecha  = date('d',$ts) . ' ' . $meses[(int)date('m',$ts)-1];
+              $bank   = tc($tx['b_bank']) ?: '—';
+              $sLabel = $sLabels[$tx['status']] ?? $tx['status'];
+              $sCl    = $sCls[$tx['status']] ?? '';
+            ?>
+            <div class="atx-card" onclick="openSheet(<?= (int)$tx['id'] ?>)">
+              <div class="atx-av"><?= htmlspecialchars($ini) ?></div>
+              <div class="atx-info">
+                <div class="atx-names">
+                  <?= htmlspecialchars($uShort) ?> <span>→</span> <?= htmlspecialchars($bName) ?>
+                </div>
+                <div class="atx-meta"><?= htmlspecialchars($bank) ?> · <?= $fecha ?></div>
+              </div>
+              <div class="atx-right">
+                <div class="atx-amount"><?= strtoupper(htmlspecialchars($tx['currency'])) ?> <?= number_format((float)$tx['amount'], 2) ?></div>
+                <span class="atx-badge <?= $sCl ?>"><?= htmlspecialchars($sLabel) ?></span>
+              </div>
+            </div>
+          <?php endforeach; ?>
+        </div>
+      <?php endif; ?>
+    </div><!-- /gestionados -->
+
+  </div><!-- /movimientos -->
 
   <!-- ═══════════════════════════════
        SECCIÓN: ANALÍTICA (próximo)
@@ -515,6 +827,143 @@ body { scrollbar-width:none; }
 </main>
 
 
+<!-- ═══════════════════════════════════════
+     DETAIL SHEET
+     ═══════════════════════════════════════ -->
+<div class="sheet-backdrop" id="sheetBackdrop"></div>
+<div class="detail-sheet" id="detailSheet">
+
+  <!-- Header -->
+  <div class="sheet-header">
+    <div class="sheet-drag"></div>
+    <div class="sheet-header-row">
+      <div>
+        <div class="sheet-title" id="sheetTitle">Envío #</div>
+        <span class="sheet-status-badge" id="sheetStatusBadge"></span>
+      </div>
+      <button class="sheet-close" onclick="closeSheet()">×</button>
+    </div>
+  </div>
+
+  <!-- Body (scrollable) -->
+  <div class="sheet-body">
+
+    <!-- Monto -->
+    <div class="sheet-amt-block">
+      <div class="sheet-amt-main" id="sheetAmt"></div>
+      <div class="sheet-amt-sub"  id="sheetRecv"></div>
+    </div>
+
+    <!-- Remitente -->
+    <div class="sheet-section">
+      <div class="sheet-section-title">Remitente</div>
+      <div class="sheet-rows">
+        <div class="sheet-row">
+          <span class="sheet-row-label">Nombre</span>
+          <span class="sheet-row-value" id="sheetUName"></span>
+        </div>
+        <div class="sheet-row">
+          <span class="sheet-row-label">Email</span>
+          <span class="sheet-row-value" id="sheetUEmail"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Destinatario -->
+    <div class="sheet-section">
+      <div class="sheet-section-title">Destinatario</div>
+      <div class="sheet-rows">
+        <div class="sheet-row">
+          <span class="sheet-row-label">Nombre</span>
+          <span class="sheet-row-value" id="sheetBName"></span>
+        </div>
+        <div class="sheet-row">
+          <span class="sheet-row-label">Relación</span>
+          <span class="sheet-row-value" id="sheetBRel"></span>
+        </div>
+        <div class="sheet-row">
+          <span class="sheet-row-label">Cédula / ID</span>
+          <span class="sheet-row-value" id="sheetBId"></span>
+        </div>
+        <div class="sheet-row">
+          <span class="sheet-row-label">Banco</span>
+          <span class="sheet-row-value" id="sheetBBank"></span>
+        </div>
+        <div class="sheet-row">
+          <span class="sheet-row-label">N° cuenta</span>
+          <span class="sheet-row-value" id="sheetBAcct"></span>
+        </div>
+        <div class="sheet-row">
+          <span class="sheet-row-label">Tipo cuenta</span>
+          <span class="sheet-row-value" id="sheetBAcctType"></span>
+        </div>
+        <div class="sheet-row">
+          <span class="sheet-row-label">Email</span>
+          <span class="sheet-row-value" id="sheetBEmail"></span>
+        </div>
+        <div class="sheet-row">
+          <span class="sheet-row-label">País</span>
+          <span class="sheet-row-value" id="sheetBCountry"></span>
+        </div>
+        <div class="sheet-row">
+          <span class="sheet-row-label">Motivo envío</span>
+          <span class="sheet-row-value" id="sheetBReason"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Financiero -->
+    <div class="sheet-section">
+      <div class="sheet-section-title">Detalle financiero</div>
+      <div class="sheet-rows">
+        <div class="sheet-row">
+          <span class="sheet-row-label">Total a pagar</span>
+          <span class="sheet-row-value" id="sheetTotal"></span>
+        </div>
+        <div class="sheet-row">
+          <span class="sheet-row-label">Comisión</span>
+          <span class="sheet-row-value" id="sheetComm"></span>
+        </div>
+        <div class="sheet-row">
+          <span class="sheet-row-label">Tasa aplicada</span>
+          <span class="sheet-row-value" id="sheetRate"></span>
+        </div>
+        <div class="sheet-row">
+          <span class="sheet-row-label">Fecha</span>
+          <span class="sheet-row-value" id="sheetDate"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Motivo cancelación (oculto por defecto) -->
+    <div class="sheet-section" id="sheetCancelSection" style="display:none;">
+      <div class="sheet-section-title">Motivo de cancelación</div>
+      <div class="sheet-rows">
+        <div class="sheet-row sheet-row-cancelled">
+          <span class="sheet-row-label">Razón</span>
+          <span class="sheet-row-value" id="sheetFailedReason"></span>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /sheet-body -->
+
+  <!-- Footer: cambio de estado -->
+  <div class="sheet-footer">
+    <div class="sheet-footer-label">Cambiar estado</div>
+    <div class="status-pick-row" id="statusBtnGroup"></div>
+    <div class="reason-group" id="reasonGroup">
+      <div class="reason-label">Motivo de cancelación</div>
+      <textarea class="reason-input" id="reasonInput" placeholder="Describe el motivo…" rows="3"></textarea>
+    </div>
+    <button class="sheet-confirm-btn" id="sheetConfirmBtn" onclick="openStatusModal()">
+      Confirmar cambio
+    </button>
+  </div>
+
+</div><!-- /detail-sheet -->
+
+
 <!-- MODAL: confirmación tasa -->
 <div class="modal-overlay" id="rateModal">
   <div class="modal-box">
@@ -526,6 +975,21 @@ body { scrollbar-width:none; }
     <div class="modal-actions">
       <button class="modal-cancel" onclick="closeModal('rateModal')">Cancelar</button>
       <button class="modal-confirm" id="rateConfirmBtn">Confirmar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: confirmación estado TX -->
+<div class="modal-overlay" id="statusModal">
+  <div class="modal-box">
+    <div class="modal-title">Confirmar cambio de estado</div>
+    <div class="modal-body">
+      ¿Cambiar el envío <strong>#<span id="sModalId"></span></strong> a
+      <strong id="sModalLabel"></strong>?
+    </div>
+    <div class="modal-actions">
+      <button class="modal-cancel" onclick="closeModal('statusModal')">Cancelar</button>
+      <button class="modal-confirm" onclick="submitStatusChange()">Confirmar</button>
     </div>
   </div>
 </div>
@@ -579,27 +1043,50 @@ body { scrollbar-width:none; }
 
 
 <script>
-const TOAST_DATA = <?= json_encode($toast) ?>;
-const ACTIVE_TAB = <?= json_encode($activeTab) ?>;
+const TOAST_DATA  = <?= json_encode($toast) ?>;
+const ACTIVE_TAB  = <?= json_encode($activeTab) ?>;
+const ACTIVE_SUB  = <?= json_encode($activeSub) ?>;
+const TX_DATA     = <?= json_encode($txMap, JSON_UNESCAPED_UNICODE) ?>;
 
-/* ── Tabs ── */
+/* ─────────────────────────────
+   MAIN TABS
+───────────────────────────── */
 function switchTab(name) {
   document.querySelectorAll('.tab-section').forEach(s => s.classList.remove('active'));
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-  const section = document.getElementById('section-' + name);
+  const sec = document.getElementById('section-' + name);
   const btn = document.querySelector('[data-tab="' + name + '"]');
-  if (section) section.classList.add('active');
+  if (sec) sec.classList.add('active');
   if (btn) btn.classList.add('active');
   const url = new URL(window.location);
   url.searchParams.set('tab', name);
   history.replaceState({}, '', url);
 }
+document.querySelectorAll('.tab-btn').forEach(b =>
+  b.addEventListener('click', () => switchTab(b.dataset.tab))
+);
 
-document.querySelectorAll('.tab-btn').forEach(btn => {
-  btn.addEventListener('click', () => switchTab(btn.dataset.tab));
-});
+/* ─────────────────────────────
+   SUB-TABS
+───────────────────────────── */
+function switchSub(name) {
+  document.querySelectorAll('.sub-section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.sub-btn').forEach(b => b.classList.remove('active'));
+  const sec = document.getElementById('sub-' + name);
+  const btn = document.querySelector('[data-sub="' + name + '"]');
+  if (sec) sec.classList.add('active');
+  if (btn) btn.classList.add('active');
+  const url = new URL(window.location);
+  url.searchParams.set('sub', name);
+  history.replaceState({}, '', url);
+}
+document.querySelectorAll('.sub-btn').forEach(b =>
+  b.addEventListener('click', () => switchSub(b.dataset.sub))
+);
 
-/* ── Rate modal ── */
+/* ─────────────────────────────
+   RATE MODAL
+───────────────────────────── */
 let pendingForm = null;
 
 function openRateModal(e, currency, oldRate) {
@@ -607,47 +1094,202 @@ function openRateModal(e, currency, oldRate) {
   const input = document.getElementById('input-' + currency);
   const newRate = parseFloat(input.value);
   if (isNaN(newRate) || newRate <= 0) return;
-
   document.getElementById('mCur').textContent = currency;
   document.getElementById('mOld').textContent = oldRate.toLocaleString('es-ES', {minimumFractionDigits:2, maximumFractionDigits:4});
   document.getElementById('mNew').textContent = newRate.toLocaleString('es-ES', {minimumFractionDigits:2, maximumFractionDigits:4});
-
   pendingForm = document.getElementById('form-' + currency);
   document.getElementById('rateModal').classList.add('open');
 }
 
 document.getElementById('rateConfirmBtn').addEventListener('click', function() {
-  if (pendingForm) {
-    pendingForm.onsubmit = null; // evitar loop
-    pendingForm.submit();
-  }
+  if (pendingForm) { pendingForm.onsubmit = null; pendingForm.submit(); }
   closeModal('rateModal');
 });
 
 function closeModal(id) {
   document.getElementById(id).classList.remove('open');
-  pendingForm = null;
+  if (id === 'rateModal') pendingForm = null;
 }
 
-// Cerrar modal al clic en backdrop
 document.getElementById('rateModal').addEventListener('click', function(e) {
   if (e.target === this) closeModal('rateModal');
 });
+document.getElementById('statusModal').addEventListener('click', function(e) {
+  if (e.target === this) closeModal('statusModal');
+});
 
-/* ── Toast ── */
+/* ─────────────────────────────
+   DETAIL SHEET
+───────────────────────────── */
+const STATUS_LABELS  = {pending:'Pendiente', paid:'Pagado', completed:'Completado', cancelled:'Cancelado'};
+const STATUS_CLS     = {pending:'s-pending', paid:'s-paid', completed:'s-completed', cancelled:'s-cancelled'};
+const ACTYPE_LABELS  = {checking:'Corriente', savings:'Ahorro'};
+const MONTHS         = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+
+let currentTxId    = null;
+let selectedStatus = null;
+
+function cap(s) {
+  if (!s) return '';
+  return s.toLowerCase().replace(/(?:^|\s|-)(\S)/g, c => c.toUpperCase());
+}
+function fmtNum(v, d) {
+  return parseFloat(v).toLocaleString('es-ES', {minimumFractionDigits: d ?? 2, maximumFractionDigits: d ?? 2});
+}
+function fmtDate(str) {
+  const d = new Date(str);
+  return d.getDate() + ' ' + MONTHS[d.getMonth()] + ' ' + d.getFullYear() + ' · ' +
+         String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+}
+
+function openSheet(txId) {
+  const tx = TX_DATA[txId];
+  if (!tx) return;
+  currentTxId    = txId;
+  selectedStatus = null;
+  populateSheet(tx);
+  document.getElementById('detailSheet').classList.add('open');
+  document.getElementById('sheetBackdrop').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeSheet() {
+  document.getElementById('detailSheet').classList.remove('open');
+  document.getElementById('sheetBackdrop').classList.remove('open');
+  document.body.style.overflow = '';
+  currentTxId    = null;
+  selectedStatus = null;
+}
+
+document.getElementById('sheetBackdrop').addEventListener('click', closeSheet);
+
+function set(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = val || '—';
+}
+
+function populateSheet(tx) {
+  const cur = (tx.currency || 'EUR').toUpperCase();
+
+  /* header */
+  set('sheetTitle', 'Envío #' + tx.id);
+  const badge = document.getElementById('sheetStatusBadge');
+  badge.textContent = STATUS_LABELS[tx.status] || tx.status;
+  badge.className   = 'sheet-status-badge ' + (STATUS_CLS[tx.status] || '');
+
+  /* montos */
+  set('sheetAmt',  cur + ' ' + fmtNum(tx.amount));
+  set('sheetRecv', 'Destinatario recibe: VES ' + fmtNum(tx.amount_received));
+
+  /* remitente */
+  set('sheetUName',  cap(tx.u_first) + ' ' + cap(tx.u_last));
+  set('sheetUEmail', tx.u_email);
+
+  /* destinatario */
+  set('sheetBName',     cap(tx.b_first) + ' ' + cap(tx.b_last));
+  set('sheetBRel',      cap(tx.b_relation));
+  set('sheetBId',       (tx.b_idtype ? tx.b_idtype + ' ' : '') + tx.b_idnum);
+  set('sheetBBank',     cap(tx.b_bank));
+  set('sheetBAcct',     tx.b_account);
+  set('sheetBAcctType', ACTYPE_LABELS[tx.b_actype] || cap(tx.b_actype));
+  set('sheetBEmail',    tx.b_email);
+  set('sheetBCountry',  tx.b_country);
+  set('sheetBReason',   cap(tx.b_reason));
+
+  /* financiero */
+  set('sheetTotal', cur + ' ' + fmtNum(tx.total_to_pay));
+  set('sheetComm',  cur + ' ' + fmtNum(tx.commission));
+  set('sheetRate',  fmtNum(tx.exchange_rate, 4) + ' VES');
+  set('sheetDate',  fmtDate(tx.created_at));
+
+  /* motivo cancelación */
+  const cancelSec = document.getElementById('sheetCancelSection');
+  if (tx.status === 'cancelled' && tx.failed_reason) {
+    set('sheetFailedReason', tx.failed_reason);
+    cancelSec.style.display = '';
+  } else {
+    cancelSec.style.display = 'none';
+  }
+
+  /* botones de estado (todos excepto el actual) */
+  const group = document.getElementById('statusBtnGroup');
+  group.innerHTML = '';
+  ['pending','paid','completed','cancelled'].forEach(s => {
+    if (s === tx.status) return;
+    const btn = document.createElement('button');
+    btn.type      = 'button';
+    btn.className = 'spick';
+    btn.dataset.status = s;
+    btn.textContent    = STATUS_LABELS[s];
+    btn.addEventListener('click', () => selectStatus(s));
+    group.appendChild(btn);
+  });
+
+  /* reset footer */
+  document.getElementById('reasonGroup').style.display = 'none';
+  document.getElementById('reasonInput').value         = '';
+  document.getElementById('sheetConfirmBtn').classList.remove('ready');
+}
+
+function selectStatus(status) {
+  selectedStatus = status;
+  document.querySelectorAll('.spick').forEach(b => {
+    b.className = 'spick';
+    if (b.dataset.status === status) b.classList.add('sel-' + status);
+  });
+  document.getElementById('reasonGroup').style.display =
+    status === 'cancelled' ? 'block' : 'none';
+  document.getElementById('sheetConfirmBtn').classList.add('ready');
+}
+
+function openStatusModal() {
+  if (!selectedStatus || !currentTxId) return;
+  if (selectedStatus === 'cancelled' &&
+      !document.getElementById('reasonInput').value.trim()) {
+    showToast('Escribe el motivo de cancelación', 'error');
+    return;
+  }
+  document.getElementById('sModalLabel').textContent = STATUS_LABELS[selectedStatus];
+  document.getElementById('sModalId').textContent    = currentTxId;
+  document.getElementById('statusModal').classList.add('open');
+}
+
+function submitStatusChange() {
+  const form = document.createElement('form');
+  form.method = 'POST';
+  form.action = '/app/pay/admin.php';
+  const fields = {
+    action:        'update_tx_status',
+    tx_id:         currentTxId,
+    new_status:    selectedStatus,
+    failed_reason: document.getElementById('reasonInput').value.trim()
+  };
+  for (const [k, v] of Object.entries(fields)) {
+    const inp = document.createElement('input');
+    inp.type  = 'hidden'; inp.name = k; inp.value = v;
+    form.appendChild(inp);
+  }
+  document.body.appendChild(form);
+  form.submit();
+}
+
+/* ─────────────────────────────
+   TOAST
+───────────────────────────── */
 function showToast(msg, type) {
   const t = document.getElementById('toast');
   t.textContent = msg;
-  t.className = 'toast toast-' + type + ' show';
+  t.className   = 'toast toast-' + type + ' show';
   setTimeout(() => { t.className = 'toast'; }, 3500);
 }
 
-/* ── Init ── */
+/* ─────────────────────────────
+   INIT
+───────────────────────────── */
 document.addEventListener('DOMContentLoaded', function() {
   switchTab(ACTIVE_TAB || 'tasas');
-  if (TOAST_DATA) {
-    setTimeout(() => showToast(TOAST_DATA.msg, TOAST_DATA.type), 300);
-  }
+  switchSub(ACTIVE_SUB || 'pendientes');
+  if (TOAST_DATA) setTimeout(() => showToast(TOAST_DATA.msg, TOAST_DATA.type), 300);
 });
 
 if ('serviceWorker' in navigator) {
