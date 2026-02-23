@@ -100,6 +100,35 @@ function tc(string $s): string {
     return mb_convert_case(mb_strtolower(trim($s), 'UTF-8'), MB_CASE_TITLE, 'UTF-8');
 }
 
+/* ── Analítica ── */
+$anaRows = $pdo->query(
+    "SELECT status, currency, amount, commission, user_id, created_at FROM transactions"
+)->fetchAll();
+$totalEnvios = count($anaRows);
+$anaEUR = 0.0; $anaUSD = 0.0; $anaCommEUR = 0.0; $anaCommUSD = 0.0;
+$anaUsers = []; $anaStat = ['pending'=>0,'paid'=>0,'completed'=>0,'cancelled'=>0];
+foreach ($anaRows as $r) {
+    if ($r['currency'] === 'EUR') { $anaEUR     += (float)$r['amount']; $anaCommEUR += (float)$r['commission']; }
+    if ($r['currency'] === 'USD') { $anaUSD     += (float)$r['amount']; $anaCommUSD += (float)$r['commission']; }
+    $anaUsers[$r['user_id']] = 1;
+    if (isset($anaStat[$r['status']])) $anaStat[$r['status']]++;
+}
+$anaActiveUsers = count($anaUsers);
+
+$ana7 = [];
+for ($i = 6; $i >= 0; $i--) { $ana7[date('Y-m-d', strtotime("-{$i} days"))] = 0; }
+foreach ($anaRows as $r) { $d = substr($r['created_at'], 0, 10); if (isset($ana7[$d])) $ana7[$d]++; }
+$ana7Max = max(array_values($ana7) ?: [1]) ?: 1;
+
+$anaTopBanks = $pdo->query("
+    SELECT COALESCE(b.bank_name,'Sin banco') AS bank, COUNT(*) AS cnt
+    FROM transactions t
+    LEFT JOIN beneficiaries b ON b.id = t.beneficiary_id
+    WHERE b.bank_name IS NOT NULL AND b.bank_name != ''
+    GROUP BY b.bank_name ORDER BY cnt DESC LIMIT 5
+")->fetchAll();
+$anaTopMax = !empty($anaTopBanks) ? (int)$anaTopBanks[0]['cnt'] : 1;
+
 /* ── Toast ── */
 $toasts = [
     'rate_ok'  => ['msg' => "Tasa {$curParam}/VES actualizada correctamente", 'type' => 'success'],
@@ -584,6 +613,94 @@ body { scrollbar-width:none; }
 @media (min-width:600px) {
   .app-content { padding-left:24px; padding-right:24px; }
 }
+
+/* ── ANALYTICS ── */
+.ana-block { margin-bottom:22px; }
+.ana-label {
+  font-size:11px; font-weight:600; color:var(--text-muted);
+  letter-spacing:.08em; text-transform:uppercase; margin-bottom:10px;
+}
+
+/* KPI grid */
+.kpi-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.kpi-card {
+  background:var(--glass); border:1px solid var(--glass-border);
+  border-radius:var(--radius); padding:14px 15px;
+  animation:fadeInUp .4s ease both;
+}
+.kpi-card.span2 { grid-column:span 2; }
+.kpi-icon {
+  width:32px; height:32px; border-radius:9px;
+  background:var(--admin-accent-bg); border:1px solid var(--admin-border);
+  display:flex; align-items:center; justify-content:center;
+  margin-bottom:10px; color:var(--admin-accent);
+}
+.kpi-icon svg { width:16px; height:16px; }
+.kpi-value { font-size:20px; font-weight:700; letter-spacing:-.02em; line-height:1.15; }
+.kpi-value.v-eur  { color:var(--status-paid); }
+.kpi-value.v-usd  { color:var(--status-ok); }
+.kpi-label { font-size:11px; color:var(--text-muted); margin-top:4px; }
+.kpi-comm-row { display:flex; gap:20px; }
+.kpi-comm-item { flex:1; }
+.kpi-comm-val { font-size:18px; font-weight:700; letter-spacing:-.01em; }
+.kpi-comm-val.eur { color:var(--status-paid); }
+.kpi-comm-val.usd { color:var(--status-ok); }
+.kpi-comm-cur { font-size:10px; color:var(--text-muted); margin-top:2px; }
+
+/* Status distribution */
+.stat-dist {
+  background:var(--glass); border:1px solid var(--glass-border);
+  border-radius:var(--radius); padding:14px 15px;
+  animation:fadeInUp .4s ease .1s both;
+}
+.stat-row { display:flex; align-items:center; gap:10px; margin-bottom:11px; }
+.stat-row:last-child { margin-bottom:0; }
+.stat-name { font-size:12px; font-weight:500; width:82px; flex-shrink:0; }
+.stat-bar-wrap { flex:1; height:6px; border-radius:3px; background:rgba(255,255,255,.07); }
+.stat-bar { height:100%; border-radius:3px; transition:width .7s cubic-bezier(.4,0,.2,1); }
+.stat-bar.b-pending   { background:var(--status-pending); }
+.stat-bar.b-paid      { background:var(--status-paid); }
+.stat-bar.b-completed { background:var(--status-ok); }
+.stat-bar.b-cancelled { background:var(--status-failed); }
+.stat-count { font-size:12px; font-weight:700; width:28px; text-align:right; flex-shrink:0; }
+
+/* 7-day bar chart */
+.chart-card {
+  background:var(--glass); border:1px solid var(--glass-border);
+  border-radius:var(--radius); padding:16px 14px 12px;
+  animation:fadeInUp .4s ease .15s both;
+}
+.bar-chart-area {
+  display:flex; align-items:flex-end; gap:5px;
+  height:64px; margin-bottom:6px;
+}
+.bar-item {
+  flex:1; border-radius:4px 4px 0 0; min-height:4px;
+  background:linear-gradient(180deg, var(--admin-accent) 0%, rgba(167,139,250,.3) 100%);
+}
+.bar-item.b-zero { background:rgba(255,255,255,.08); }
+.bar-labels-row { display:flex; gap:5px; }
+.bar-label-col  { flex:1; text-align:center; }
+.bar-day-lbl    { font-size:10px; color:var(--text-muted); }
+.bar-cnt-lbl    { font-size:9px; color:var(--admin-accent); margin-top:1px; font-weight:600; }
+
+/* Top banks */
+.banks-card {
+  background:var(--glass); border:1px solid var(--glass-border);
+  border-radius:var(--radius); overflow:hidden;
+  animation:fadeInUp .4s ease .2s both;
+}
+.bank-row {
+  display:flex; align-items:center; gap:10px; padding:11px 14px;
+  border-bottom:1px solid rgba(255,255,255,.04);
+}
+.bank-row:last-child { border-bottom:none; }
+.bank-rank { font-size:12px; font-weight:700; color:var(--admin-accent); width:18px; flex-shrink:0; }
+.bank-name { flex:1; font-size:12px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.bank-bar-wrap { width:56px; height:5px; background:rgba(255,255,255,.07); border-radius:3px; flex-shrink:0; }
+.bank-bar-fill { height:100%; border-radius:3px; background:var(--admin-accent); opacity:.6; }
+.bank-count { font-size:12px; font-weight:700; color:var(--text-secondary); width:22px; text-align:right; flex-shrink:0; }
+.banks-empty { padding:28px; text-align:center; color:var(--text-muted); font-size:13px; }
 </style>
 </head>
 <body>
@@ -811,17 +928,156 @@ body { scrollbar-width:none; }
   </div><!-- /movimientos -->
 
   <!-- ═══════════════════════════════
-       SECCIÓN: ANALÍTICA (próximo)
+       SECCIÓN: ANALÍTICA
        ═══════════════════════════════ -->
   <div class="tab-section" id="section-analitica">
-    <div class="coming-card">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-        <line x1="18" y1="20" x2="18" y2="10"/>
-        <line x1="12" y1="20" x2="12" y2="4"/>
-        <line x1="6"  y1="20" x2="6"  y2="14"/>
-      </svg>
-      <div>Módulo de analítica — próximamente</div>
+
+    <!-- KPIs -->
+    <div class="ana-block">
+      <div class="ana-label">Resumen general</div>
+      <div class="kpi-grid">
+
+        <!-- Total envíos -->
+        <div class="kpi-card" style="animation-delay:.05s">
+          <div class="kpi-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="22" y1="2" x2="11" y2="13"/>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+            </svg>
+          </div>
+          <div class="kpi-value"><?= number_format($totalEnvios) ?></div>
+          <div class="kpi-label">Total envíos</div>
+        </div>
+
+        <!-- Usuarios activos -->
+        <div class="kpi-card" style="animation-delay:.08s">
+          <div class="kpi-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+            </svg>
+          </div>
+          <div class="kpi-value"><?= number_format($anaActiveUsers) ?></div>
+          <div class="kpi-label">Usuarios activos</div>
+        </div>
+
+        <!-- EUR enviado -->
+        <div class="kpi-card" style="animation-delay:.11s">
+          <div class="kpi-icon" style="font-size:18px;background:rgba(96,165,250,.12);border-color:rgba(96,165,250,.25)">🇪🇺</div>
+          <div class="kpi-value v-eur"><?= number_format($anaEUR, 2, '.', ',') ?></div>
+          <div class="kpi-label">EUR total enviado</div>
+        </div>
+
+        <!-- USD enviado -->
+        <div class="kpi-card" style="animation-delay:.14s">
+          <div class="kpi-icon" style="font-size:18px;background:rgba(52,211,153,.12);border-color:rgba(52,211,153,.25)">🇺🇸</div>
+          <div class="kpi-value v-usd"><?= number_format($anaUSD, 2, '.', ',') ?></div>
+          <div class="kpi-label">USD total enviado</div>
+        </div>
+
+        <!-- Comisión total (ancho completo) -->
+        <div class="kpi-card span2" style="animation-delay:.17s">
+          <div class="kpi-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="1" x2="12" y2="23"/>
+              <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+            </svg>
+          </div>
+          <div class="kpi-label" style="margin-bottom:8px;">Comisión total recaudada</div>
+          <div class="kpi-comm-row">
+            <div class="kpi-comm-item">
+              <div class="kpi-comm-val eur"><?= number_format($anaCommEUR, 2, '.', ',') ?></div>
+              <div class="kpi-comm-cur">Euros</div>
+            </div>
+            <div class="kpi-comm-item">
+              <div class="kpi-comm-val usd"><?= number_format($anaCommUSD, 2, '.', ',') ?></div>
+              <div class="kpi-comm-cur">Dólares</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
     </div>
+
+    <!-- Envíos por estado -->
+    <div class="ana-block">
+      <div class="ana-label">Envíos por estado</div>
+      <div class="stat-dist">
+        <?php
+          $statLabels = ['pending'=>'Pendiente','paid'=>'Pagado','completed'=>'Completado','cancelled'=>'Cancelado'];
+          $statColors = [
+            'pending'   => 'var(--status-pending)',
+            'paid'      => 'var(--status-paid)',
+            'completed' => 'var(--status-ok)',
+            'cancelled' => 'var(--status-failed)',
+          ];
+          $statBarMax = max(array_values($anaStat) ?: [1]) ?: 1;
+          foreach ($anaStat as $st => $cnt):
+            $w = $statBarMax > 0 ? round(($cnt / $statBarMax) * 100) : 0;
+        ?>
+        <div class="stat-row">
+          <div class="stat-name" style="color:<?= $statColors[$st] ?>"><?= $statLabels[$st] ?></div>
+          <div class="stat-bar-wrap">
+            <div class="stat-bar b-<?= $st ?>" style="width:<?= $w ?>%"></div>
+          </div>
+          <div class="stat-count" style="color:<?= $statColors[$st] ?>"><?= $cnt ?></div>
+        </div>
+        <?php endforeach; ?>
+      </div>
+    </div>
+
+    <!-- Últimos 7 días -->
+    <div class="ana-block">
+      <div class="ana-label">Últimos 7 días</div>
+      <div class="chart-card">
+        <?php $dayEs = ['Mon'=>'Lun','Tue'=>'Mar','Wed'=>'Mié','Thu'=>'Jue','Fri'=>'Vie','Sat'=>'Sáb','Sun'=>'Dom']; ?>
+        <div class="bar-chart-area">
+          <?php foreach ($ana7 as $date => $count):
+            $hpx = $count > 0 ? max(6, (int)round(($count / $ana7Max) * 60)) : 4;
+          ?>
+          <div class="bar-item<?= $count === 0 ? ' b-zero' : '' ?>" style="height:<?= $hpx ?>px"></div>
+          <?php endforeach; ?>
+        </div>
+        <div class="bar-labels-row">
+          <?php foreach ($ana7 as $date => $count):
+            $dayLbl = $dayEs[date('D', strtotime($date))] ?? substr($date, 8);
+          ?>
+          <div class="bar-label-col">
+            <div class="bar-day-lbl"><?= htmlspecialchars($dayLbl) ?></div>
+            <?php if ($count > 0): ?>
+            <div class="bar-cnt-lbl"><?= $count ?></div>
+            <?php endif; ?>
+          </div>
+          <?php endforeach; ?>
+        </div>
+      </div>
+    </div>
+
+    <!-- Top bancos destinatarios -->
+    <div class="ana-block">
+      <div class="ana-label">Top bancos destinatarios</div>
+      <div class="banks-card">
+        <?php if (empty($anaTopBanks)): ?>
+          <div class="banks-empty">Sin datos de bancos aún</div>
+        <?php else: ?>
+          <?php foreach ($anaTopBanks as $idx => $bk):
+            $bw = round(((int)$bk['cnt'] / $anaTopMax) * 100);
+          ?>
+          <div class="bank-row">
+            <div class="bank-rank">#<?= $idx + 1 ?></div>
+            <div class="bank-name"><?= htmlspecialchars(tc($bk['bank'])) ?></div>
+            <div class="bank-bar-wrap">
+              <div class="bank-bar-fill" style="width:<?= $bw ?>%"></div>
+            </div>
+            <div class="bank-count"><?= (int)$bk['cnt'] ?></div>
+          </div>
+          <?php endforeach; ?>
+        <?php endif; ?>
+      </div>
+    </div>
+
   </div>
 
 </main>
